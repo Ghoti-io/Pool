@@ -12,6 +12,8 @@ using namespace std;
 using namespace Ghoti::Aquarium;
 
 TEST(Declare, Null) {
+  Aquarium a{};
+  a.stop();
   EXPECT_EQ(0, 0);
 }
 
