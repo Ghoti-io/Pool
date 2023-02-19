@@ -4,7 +4,7 @@
  * Code for the Pool thread pool.
  */
 
-#include "aquarium.hpp"
+#include "pool.hpp"
 #include <iostream>
 
 using namespace std;

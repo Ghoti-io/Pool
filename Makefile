@@ -5,14 +5,14 @@ BUILD := ./build
 OBJ_DIR := $(BUILD)/objects
 GEN_DIR := $(BUILD)/generated
 APP_DIR := $(BUILD)/apps
-TARGET := libghoti-io-aquarium.so
+TARGET := libghoti-io-pool.so
 INCLUDE := -I include/
-LIBOBJECTS := $(OBJ_DIR)/aquarium.o
+LIBOBJECTS := $(OBJ_DIR)/pool.o
 
 TESTFLAGS := `pkg-config --libs --cflags gtest`
 
 
-AQUARIUMLIBRARY := -L $(APP_DIR) -Wl,-R -Wl,$(APP_DIR) -l:$(TARGET)
+POOLLIBRARY := -L $(APP_DIR) -Wl,-R -Wl,$(APP_DIR) -l:$(TARGET)
 
 
 all: $(APP_DIR)/$(TARGET) ## Build the shared library
@@ -20,8 +20,8 @@ all: $(APP_DIR)/$(TARGET) ## Build the shared library
 ####################################################################
 # Dependency Variables
 ####################################################################
-DEP_AQUARIUM = \
-	include/aquarium.hpp
+DEP_POOL = \
+	include/pool.hpp
 
 ####################################################################
 # Object Files
@@ -32,9 +32,9 @@ $(LIBOBJECTS) :
 	@mkdir -p $(@D)
 	$(CXX) $(CXXFLAGS) $(INCLUDE) -c $< -MMD -o $@ -fPIC
 
-$(OBJ_DIR)/aquarium.o: \
-				src/aquarium.cpp \
-				$(DEP_AQUARIUM)
+$(OBJ_DIR)/pool.o: \
+				src/pool.cpp \
+				$(DEP_POOL)
 
 ####################################################################
 # Shared Library
@@ -42,7 +42,7 @@ $(OBJ_DIR)/aquarium.o: \
 
 $(APP_DIR)/$(TARGET): \
 				$(LIBOBJECTS)
-	@echo "\n### Compiling Ghoti.io Aquarium Shared Library ###"
+	@echo "\n### Compiling Ghoti.io Pool Shared Library ###"
 	@mkdir -p $(@D)
 	$(CXX) $(CXXFLAGS) -shared -o $@ $^ $(LDFLAGS)
 
@@ -52,11 +52,11 @@ $(APP_DIR)/$(TARGET): \
 
 $(APP_DIR)/test: \
 				test/test.cpp \
-				$(DEP_AQUARIUM) \
+				$(DEP_POOL) \
 				$(APP_DIR)/$(TARGET)
-	@echo "\n### Compiling Aquarium Test ###"
+	@echo "\n### Compiling Pool Test ###"
 	@mkdir -p $(@D)
-	$(CXX) $(CXXFLAGS) $(INCLUDE) -o $@ $< $(LDFLAGS) $(TESTFLAGS) $(AQUARIUMLIBRARY)
+	$(CXX) $(CXXFLAGS) $(INCLUDE) -o $@ $< $(LDFLAGS) $(TESTFLAGS) $(POOLLIBRARY)
 
 ####################################################################
 # Commands

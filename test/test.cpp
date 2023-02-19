@@ -6,7 +6,7 @@
 
 #include <gtest/gtest.h>
 #include <iostream>
-#include "aquarium.hpp"
+#include "pool.hpp"
 
 using namespace std;
 using namespace Ghoti::Pool;
