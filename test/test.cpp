@@ -9,10 +9,10 @@
 #include "aquarium.hpp"
 
 using namespace std;
-using namespace Ghoti::Aquarium;
+using namespace Ghoti::Pool;
 
 TEST(Declare, Null) {
-  Aquarium a{};
+  Pool a{};
   a.stop();
   EXPECT_EQ(0, 0);
 }

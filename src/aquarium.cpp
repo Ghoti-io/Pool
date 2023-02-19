@@ -1,27 +1,27 @@
 /**
  * @file
  *
- * Code for the Aquarium thread pool.
+ * Code for the Pool thread pool.
  */
 
 #include "aquarium.hpp"
 #include <iostream>
 
 using namespace std;
-using namespace Ghoti::Aquarium;
+using namespace Ghoti::Pool;
 
-Aquarium::Aquarium() : terminate{false} {
+Pool::Pool() : terminate{false} {
   // Get the number of logical cores.
   auto thread_start = thread::hardware_concurrency();
 
   // Create threads in the pool.
   this->threads.reserve(thread_start);
   for (size_t i = 0; i < thread_start; ++i) {
-    this->threads.emplace_back(&Aquarium::Aquarium::threadLoop, this);
+    this->threads.emplace_back(&Pool::Pool::threadLoop, this);
   }
 }
 
-void Aquarium::threadLoop() {
+void Pool::threadLoop() {
   // The thread loop will continue forever unless the terminate flag is set.
   while (true) {
     Job job;
@@ -48,7 +48,7 @@ void Aquarium::threadLoop() {
   }
 }
 
-bool Aquarium::enqueue(Job && job) {
+bool Pool::enqueue(Job && job) {
   {
     unique_lock<mutex> lock{this->queueMutex};
 
@@ -65,12 +65,12 @@ bool Aquarium::enqueue(Job && job) {
   return true;
 }
 
-bool Aquarium::hasJobsWaiting() {
+bool Pool::hasJobsWaiting() {
   unique_lock<mutex> lock{this->queueMutex};
   return this->jobs.empty();
 }
 
-void Aquarium::stop() {
+void Pool::stop() {
   // Set the stop condition.
   {
     unique_lock<mutex> lock{this->queueMutex};

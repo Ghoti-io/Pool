@@ -14,7 +14,7 @@
 #include<queue>
 #include<vector>
 
-namespace Ghoti::Aquarium{
+namespace Ghoti::Pool{
 /**
  * Holds information about a job.
  */
@@ -25,15 +25,15 @@ struct Job {
 /**
  * Represents a generalized thread pool.
  */
-class Aquarium {
+class Pool {
   public:
-  Aquarium();
+  Pool();
 
   // Remove the copy constructor.
-  Aquarium(const Ghoti::Aquarium::Aquarium&) = delete;
+  Pool(const Ghoti::Pool::Pool&) = delete;
 
   // Remove the copy assignment.
-  Ghoti::Aquarium::Aquarium& operator=(const Ghoti::Aquarium::Aquarium&) = delete;
+  Ghoti::Pool::Pool& operator=(const Ghoti::Pool::Pool&) = delete;
 
   bool enqueue(Job && job);
   void stop();
