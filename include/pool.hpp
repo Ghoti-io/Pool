@@ -9,6 +9,8 @@
 
 #include<condition_variable>
 #include<functional>
+#include<map>
+#include<memory>
 #include<mutex>
 #include<thread>
 #include<queue>
@@ -36,8 +38,43 @@ class Pool {
   Ghoti::Pool::Pool& operator=(const Ghoti::Pool::Pool&) = delete;
 
   bool enqueue(Job && job);
+  void start();
   void stop();
-  bool hasJobsWaiting();
+
+  /**
+   * Returns the number of jobs currently in the job queue.
+   *
+   * @returns The number of jobs currently in the job queue.
+   */
+  size_t getJobQueueCount();
+
+  /**
+   * Returns the number of threads that are created.
+   *
+   * @returns The number of threads that are created.
+   */
+  size_t getThreadCount() const;
+
+  /**
+   * Returns the number of threads that are waiting.
+   *
+   * @returns The number of threads that are waiting.
+   */
+  size_t getWaitingThreadCount() const;
+
+  /**
+   * Returns the number of threads that are terminated.
+   *
+   * @returns The number of threads that are terminated.
+   */
+  size_t getTerminatedThreadCount() const;
+
+  /**
+   * Returns the number of threads that are running.
+   *
+   * @returns The number of threads that are running.
+   */
+  size_t getRunningThreadCount() const;
 
   private:
   /**
@@ -46,9 +83,14 @@ class Pool {
   void threadLoop();
 
   /**
-   * Set of available threads.
+   * Collection of available threads.
    */
   std::vector<std::jthread> threads;
+
+  /**
+   * Track the waiting state of each thread.
+   */
+  std::map<std::thread::id, bool> threadsWaiting;
 
   /**
    * Queue of jobs waiting to be assigned to a thread.
@@ -69,6 +111,13 @@ class Pool {
    * Allows threads to wait on new jobs or termination.
    */
   std::condition_variable mutexCondition;
+
+  /**
+   * The number of threads that the pool should manage.
+   *
+   * This defaults to the number of logical cores on the system.
+   */
+  size_t thread_target_count;
 };
 
 };

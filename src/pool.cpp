@@ -10,67 +10,30 @@
 using namespace std;
 using namespace Ghoti::Pool;
 
-Pool::Pool() : terminate{false} {
+Pool::Pool() : terminate{true} {
   // Get the number of logical cores.
-  auto thread_start = thread::hardware_concurrency();
-
-  // Create threads in the pool.
-  this->threads.reserve(thread_start);
-  for (size_t i = 0; i < thread_start; ++i) {
-    this->threads.emplace_back(&Pool::Pool::threadLoop, this);
-  }
-}
-
-void Pool::threadLoop() {
-  // The thread loop will continue forever unless the terminate flag is set.
-  while (true) {
-    Job job;
-    {
-      unique_lock<mutex> lock{this->queueMutex};
-
-      // Wake up if there is a job or if the terminate flag is set.
-      this->mutexCondition.wait(lock, [this] {
-        return !this->jobs.empty() || this->terminate;
-      });
-
-      // Terminate the thread.
-      if (this->terminate) {
-        return;
-      }
-
-      // Claim a job.
-      job = move(this->jobs.front());
-      this->jobs.pop();
-    }
-
-    // Execute the job.
-    job.function();
-  }
+  this->thread_target_count = thread::hardware_concurrency();
 }
 
 bool Pool::enqueue(Job && job) {
   {
     unique_lock<mutex> lock{this->queueMutex};
-
-    // Do not enqueue the job if the pool has been set to terminate.
-    if (this->terminate) {
-      return false;
-    }
-
     this->jobs.emplace(move(job));
   }
 
   // Notify a thread that a job is available.
-  this->mutexCondition.notify_one();
+  if (!this->terminate) {
+    this->mutexCondition.notify_one();
+  }
   return true;
 }
 
-bool Pool::hasJobsWaiting() {
-  unique_lock<mutex> lock{this->queueMutex};
-  return this->jobs.empty();
-}
-
 void Pool::stop() {
+  // Don't try to stop an already-stopped pool.
+  if (this->terminate) {
+    return;
+  }
+
   // Set the stop condition.
   {
     unique_lock<mutex> lock{this->queueMutex};
@@ -87,5 +50,84 @@ void Pool::stop() {
 
   // Clean up the threads.
   this->threads.clear();
+}
+
+void Pool::start() {
+  // Don't try to start the pool if it is already running.
+  if (!this->terminate) {
+    return;
+  }
+
+  // Set the stop condition.
+  {
+    unique_lock<mutex> lock{this->queueMutex};
+    this->terminate = false;
+  }
+
+  // Create threads in the pool.
+  this->threads.reserve(this->thread_target_count);
+
+  for (size_t i = 0; i < this->thread_target_count; ++i) {
+    jthread thread{&Pool::Pool::threadLoop, this};
+    this->threadsWaiting[thread.get_id()] = false;
+    this->threads.emplace_back(move(thread));
+  }
+}
+
+size_t Pool::getJobQueueCount() {
+  unique_lock<mutex> lock{this->queueMutex};
+  return this->jobs.size();
+}
+
+size_t Pool::getThreadCount() const {
+  return this->threads.size();
+}
+
+size_t Pool::getWaitingThreadCount() const {
+  size_t count{0};
+  return count;
+}
+
+size_t Pool::getTerminatedThreadCount() const {
+  size_t count{0};
+  return count;
+}
+
+size_t Pool::getRunningThreadCount() const {
+  size_t count{0};
+  return count;
+}
+
+void Pool::threadLoop() {
+  auto thread_id = this_thread::get_id();
+
+  // The thread loop will continue forever unless the terminate flag is set.
+  while (true) {
+    Job job;
+    {
+      this->threadsWaiting[thread_id] = true;
+
+      unique_lock<mutex> lock{this->queueMutex};
+
+      // Wake up if there is a job or if the terminate flag is set.
+      this->mutexCondition.wait(lock, [this] {
+        return !this->jobs.empty() || this->terminate;
+      });
+
+      this->threadsWaiting[thread_id] = false;
+
+      // Terminate the thread.
+      if (this->terminate) {
+        return;
+      }
+
+      // Claim a job.
+      job = move(this->jobs.front());
+      this->jobs.pop();
+    }
+
+    // Execute the job.
+    job.function();
+  }
 }
 
