@@ -7,16 +7,13 @@
 #ifndef AQUARIUM_HPP
 #define AQUARIUM_HPP
 
-#include<condition_variable>
-#include<functional>
-#include<map>
-#include<memory>
-#include<mutex>
-#include<thread>
-#include<queue>
-#include<vector>
+#include <functional>
+#include <memory>
 
 namespace Ghoti::Pool{
+// Forward declaration.
+class State;
+
 /**
  * Holds information about a job.
  */
@@ -111,44 +108,12 @@ class Pool {
   /**
    * Common function loop for use by all threads in the thread pool.
    */
-  void threadLoop();
+  static void threadLoop(std::shared_ptr<State>);
 
   /**
-   * Collection of available threads.
+   * Pointer to the shared state of the thread pool.
    */
-  std::vector<std::jthread> threads;
-
-  /**
-   * Track the waiting state of each thread.
-   */
-  std::map<std::thread::id, bool> threadsWaiting;
-
-  /**
-   * Queue of jobs waiting to be assigned to a thread.
-   */
-  std::queue<Job> jobs;
-
-  /**
-   * Mutex to control access to the Queue.
-   */
-  std::mutex queueMutex;
-
-  /**
-   * Indicates whether or not the threads should terminate.
-   */
-  bool terminate;
-
-  /**
-   * Allows threads to wait on new jobs or termination.
-   */
-  std::condition_variable mutexCondition;
-
-  /**
-   * The number of threads that the pool should manage.
-   *
-   * This defaults to the number of logical cores on the system.
-   */
-  size_t thread_target_count;
+  std::shared_ptr<State> state;
 };
 
 };
