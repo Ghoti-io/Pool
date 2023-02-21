@@ -15,11 +15,20 @@ using namespace Ghoti::Pool;
 
 function emptyFunc = [](){};
 
-TEST(PoolSize, Total) {
+TEST(PoolSize, Default) {
   Pool a{};
   EXPECT_EQ(a.getThreadCount(), 0);
   a.start();
   EXPECT_EQ(a.getThreadCount(), thread::hardware_concurrency());
+  a.stop();
+  EXPECT_EQ(a.getThreadCount(), 0);
+}
+
+TEST(PoolSize, Specified) {
+  Pool a{2};
+  EXPECT_EQ(a.getThreadCount(), 0);
+  a.start();
+  EXPECT_EQ(a.getThreadCount(), 2);
   a.stop();
   EXPECT_EQ(a.getThreadCount(), 0);
 }

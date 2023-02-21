@@ -29,7 +29,18 @@ struct Job {
  */
 class Pool {
   public:
+  /**
+   * Default thread pool constructor.
+   *
+   * Will create as many threads as the total number of logical cores on the
+   * system.
+   */
   Pool();
+
+  /**
+   * Thread pool constructor for a specific number of cores.
+   */
+  Pool(size_t thread_count);
 
   // Remove the copy constructor.
   Pool(const Ghoti::Pool::Pool&) = delete;

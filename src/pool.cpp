@@ -15,6 +15,11 @@ Pool::Pool() : terminate{true} {
   this->thread_target_count = thread::hardware_concurrency();
 }
 
+Pool::Pool(size_t thread_count) : terminate{true} {
+  // Get the number of logical cores.
+  this->thread_target_count = thread_count;
+}
+
 bool Pool::enqueue(Job && job) {
   {
     unique_lock<mutex> lock{this->queueMutex};
