@@ -14,6 +14,9 @@ using namespace std;
 using namespace Ghoti::Pool;
 
 function emptyFunc = [](){};
+function threadSleep = [](size_t seconds){
+  this_thread::sleep_for(chrono::seconds{seconds});
+};
 
 TEST(PoolSize, Default) {
   Pool a{};
@@ -34,10 +37,12 @@ TEST(PoolSize, Specified) {
 }
 
 TEST(JobQueue, Count) {
-  Pool a{};
+  Pool a{0};
   EXPECT_EQ(a.getJobQueueCount(), 0);
   a.enqueue({emptyFunc});
   EXPECT_EQ(a.getJobQueueCount(), 1);
+  a.enqueue({emptyFunc});
+  EXPECT_EQ(a.getJobQueueCount(), 2);
 }
 
 int main(int argc, char** argv) {
