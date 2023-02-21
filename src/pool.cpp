@@ -96,30 +96,6 @@ bool Pool::enqueue(Job && job) {
   return true;
 }
 
-void Pool::stop() {
-  // Don't try to stop an already-stopped pool.
-  if (this->state->terminate) {
-    return;
-  }
-
-  // Set the stop condition.
-  {
-    unique_lock<mutex> lock{this->state->queueMutex};
-    this->state->terminate = true;
-  }
-
-  // Wake up all threads so that they will terminate themselves.
-  this->state->mutexCondition.notify_all();
-
-  // Join the threads.
-  for (auto & thread : this->state->threads) {
-    thread.join();
-  }
-
-  // Clean up the threads.
-  this->state->threads.clear();
-}
-
 void Pool::start() {
   // Don't try to start the pool if it is already running.
   if (!this->state->terminate) {
@@ -146,6 +122,36 @@ void Pool::start() {
   }
 }
 
+void Pool::stop() {
+  // Set the stop condition.
+  {
+    unique_lock<mutex> lock{this->state->queueMutex};
+
+    // Don't try to stop an already-stopped pool.
+    if (this->state->terminate) {
+      return;
+    }
+
+    this->state->terminate = true;
+  }
+
+  // Wake up all threads so that they will terminate themselves.
+  this->state->mutexCondition.notify_all();
+}
+
+void Pool::join() {
+  // Stop the threads (if not already done).
+  this->stop();
+
+  // Join the threads.
+  for (auto & thread : this->state->threads) {
+    thread.join();
+  }
+
+  // Clean up the threads.
+  this->state->threads.clear();
+}
+
 size_t Pool::getJobQueueCount() {
   unique_lock<mutex> lock{this->state->queueMutex};
   return this->state->jobs.size();
@@ -170,8 +176,8 @@ size_t Pool::getWaitingThreadCount() const {
 }
 
 size_t Pool::getTerminatedThreadCount() const {
-  size_t count{0};
-  return count;
+  unique_lock<mutex> waitingLock{state->threadsWaitingMutex};
+  return this->state->threads.size() - this->state->threadsWaiting.size();
 }
 
 size_t Pool::getRunningThreadCount() const {

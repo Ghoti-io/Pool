@@ -25,7 +25,7 @@ TEST(PoolSize, Default) {
   EXPECT_EQ(a.getThreadCount(), 0);
   a.start();
   EXPECT_EQ(a.getThreadCount(), thread::hardware_concurrency());
-  a.stop();
+  a.join();
   EXPECT_EQ(a.getThreadCount(), 0);
 }
 
@@ -34,7 +34,7 @@ TEST(PoolSize, Specified) {
   EXPECT_EQ(a.getThreadCount(), 0);
   a.start();
   EXPECT_EQ(a.getThreadCount(), 2);
-  a.stop();
+  a.join();
   EXPECT_EQ(a.getThreadCount(), 0);
 }
 
@@ -45,6 +45,23 @@ TEST(JobQueue, Count) {
   EXPECT_EQ(a.getJobQueueCount(), 1);
   a.enqueue({emptyFunc});
   EXPECT_EQ(a.getJobQueueCount(), 2);
+}
+
+TEST(StopJoin, Compare) {
+  Pool a{3};
+  a.enqueue({threadSleep(1)});
+  a.enqueue({threadSleep(1)});
+  a.start();
+  this_thread::sleep_for(10ms);
+  EXPECT_EQ(a.getThreadCount(), 3);
+  EXPECT_EQ(a.getTerminatedThreadCount(), 0);
+  a.stop();
+  this_thread::sleep_for(10ms);
+  EXPECT_EQ(a.getTerminatedThreadCount(), 1);
+  EXPECT_EQ(a.getThreadCount(), 3);
+  a.join();
+  EXPECT_EQ(a.getTerminatedThreadCount(), 0);
+  EXPECT_EQ(a.getThreadCount(), 0);
 }
 
 TEST(Counts, All) {

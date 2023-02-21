@@ -77,6 +77,11 @@ class Pool {
   void stop();
 
   /**
+   * Stop the thread pool (if not already stopped) and join all threads.
+   */
+  void join();
+
+  /**
    * Returns the number of jobs currently in the job queue.
    *
    * @returns The number of jobs currently in the job queue.
