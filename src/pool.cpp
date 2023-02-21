@@ -157,6 +157,15 @@ size_t Pool::getThreadCount() const {
 
 size_t Pool::getWaitingThreadCount() const {
   size_t count{0};
+  {
+    unique_lock<mutex> waitingLock{state->threadsWaitingMutex};
+    for (auto & [thread_id, waiting] : state->threadsWaiting) {
+      if (waiting) {
+        count++;
+      }
+    }
+  }
+
   return count;
 }
 
@@ -167,6 +176,15 @@ size_t Pool::getTerminatedThreadCount() const {
 
 size_t Pool::getRunningThreadCount() const {
   size_t count{0};
+  {
+    unique_lock<mutex> waitingLock{state->threadsWaitingMutex};
+    for (auto & [thread_id, waiting] : state->threadsWaiting) {
+      if (!waiting) {
+        count++;
+      }
+    }
+  }
+
   return count;
 }
 
