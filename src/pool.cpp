@@ -33,6 +33,11 @@ struct State {
   mutex queueMutex;
 
   /**
+   * Mutex to control access to the threadsWaiting map.
+   */
+  mutex threadsWaitingMutex;
+
+  /**
    * Collection of available threads.
    */
   vector<std::jthread> threads;
@@ -132,7 +137,11 @@ void Pool::start() {
 
   for (size_t i = 0; i < this->state->thread_target_count; ++i) {
     jthread thread{&Pool::Pool::threadLoop, this->state};
-    this->state->threadsWaiting[thread.get_id()] = false;
+    // Other threads may already be running, so use a mutex to protect access.
+    {
+      unique_lock<mutex> waitingLock{state->threadsWaitingMutex};
+      this->state->threadsWaiting[thread.get_id()] = false;
+    }
     this->state->threads.emplace_back(move(thread));
   }
 }
@@ -167,9 +176,14 @@ void Pool::threadLoop(shared_ptr<State> state) {
   // The thread loop will continue forever unless the terminate flag is set.
   while (true) {
     Job job;
+    // Set our waiting state the true.
     {
+      unique_lock<mutex> waitingLock{state->threadsWaitingMutex};
       state->threadsWaiting[thread_id] = true;
+    }
 
+    // Try to claim a Job.
+    {
       unique_lock<mutex> lock{state->queueMutex};
 
       // Wake up if there is a job or if the terminate flag is set.
@@ -177,11 +191,15 @@ void Pool::threadLoop(shared_ptr<State> state) {
         return !state->jobs.empty() || state->terminate;
       });
 
-      state->threadsWaiting[thread_id] = false;
-
       // Terminate the thread.
       if (state->terminate) {
-        return;
+        break;
+      }
+
+      {
+        unique_lock<mutex> waitingLock{state->threadsWaitingMutex};
+        // Tell the pool that we are no longer running.
+        state->threadsWaiting[thread_id] = false;
       }
 
       // Claim a job.
@@ -191,6 +209,12 @@ void Pool::threadLoop(shared_ptr<State> state) {
 
     // Execute the job.
     job.function();
+  }
+
+  // Remove thread_id from the waiting structure.
+  {
+    unique_lock<mutex> waitingLock{state->threadsWaitingMutex};
+    state->threadsWaiting.erase(thread_id);
   }
 }
 
