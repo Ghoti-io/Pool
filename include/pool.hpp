@@ -39,6 +39,13 @@ class Pool {
    */
   Pool(size_t thread_count);
 
+  /**
+   * Thread pool destructor.
+   *
+   * When the pool is destroyed, it will signal all threads to stop.
+   */
+  ~Pool();
+
   // Remove the copy constructor.
   Pool(const Ghoti::Pool::Pool&) = delete;
 

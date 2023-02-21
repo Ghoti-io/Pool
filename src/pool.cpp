@@ -74,6 +74,10 @@ Pool::Pool(size_t thread_count) {
   this->state->thread_target_count = thread_count;
 }
 
+Pool::~Pool() {
+  this->stop();
+}
+
 bool Pool::enqueue(Job && job) {
   {
     unique_lock<mutex> lock{this->state->queueMutex};
