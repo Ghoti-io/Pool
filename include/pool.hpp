@@ -48,8 +48,28 @@ class Pool {
   // Remove the copy assignment.
   Ghoti::Pool::Pool& operator=(const Ghoti::Pool::Pool&) = delete;
 
+  /**
+   * Enqueue a Job for the thread pool.
+   *
+   * @param job A rvalue representing the Job to be enqueued.
+   * @returns True on success, False on failure.
+   */
   bool enqueue(Job && job);
+
+  /**
+   * Start the thread pool processing.
+   *
+   * Will create threads as needed.
+   */
   void start();
+
+  /**
+   * Stop the thread pool from dispatching new jobs and remove the existing
+   * threads.
+   *
+   * Note: This will not halt any currently processing thread.  It will only
+   * keep that thread from accepting a new Job from the queue.
+   */
   void stop();
 
   /**
