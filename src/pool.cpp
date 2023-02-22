@@ -35,7 +35,7 @@ struct State {
   /**
    * Mutex to control access to the threadsWaiting map.
    */
-  mutex threadsWaitingMutex;
+  mutex controlMutex;
 
   /**
    * Collection of available threads.
@@ -108,18 +108,7 @@ void Pool::start() {
     this->state->terminate = false;
   }
 
-  // Create threads in the pool.
-  this->state->threads.reserve(this->state->thread_target_count);
-
-  for (size_t i = 0; i < this->state->thread_target_count; ++i) {
-    jthread thread{&Pool::Pool::threadLoop, this->state};
-    // Other threads may already be running, so use a mutex to protect access.
-    {
-      unique_lock<mutex> waitingLock{state->threadsWaitingMutex};
-      this->state->threadsWaiting[thread.get_id()] = false;
-    }
-    this->state->threads.emplace_back(move(thread));
-  }
+  this->createThreads();
 }
 
 void Pool::stop() {
@@ -158,17 +147,17 @@ size_t Pool::getJobQueueCount() {
 }
 
 size_t Pool::getThreadCount() const {
+  unique_lock<mutex> waitingLock{state->controlMutex};
   return this->state->threads.size();
 }
 
 size_t Pool::getWaitingThreadCount() const {
+  unique_lock<mutex> waitingLock{state->controlMutex};
   size_t count{0};
-  {
-    unique_lock<mutex> waitingLock{state->threadsWaitingMutex};
-    for (auto & [thread_id, waiting] : state->threadsWaiting) {
-      if (waiting) {
-        count++;
-      }
+
+  for (auto & [thread_id, waiting] : state->threadsWaiting) {
+    if (waiting) {
+      count++;
     }
   }
 
@@ -176,22 +165,35 @@ size_t Pool::getWaitingThreadCount() const {
 }
 
 size_t Pool::getTerminatedThreadCount() const {
-  unique_lock<mutex> waitingLock{state->threadsWaitingMutex};
+  unique_lock<mutex> waitingLock{state->controlMutex};
   return this->state->threads.size() - this->state->threadsWaiting.size();
 }
 
 size_t Pool::getRunningThreadCount() const {
+  unique_lock<mutex> waitingLock{state->controlMutex};
   size_t count{0};
-  {
-    unique_lock<mutex> waitingLock{state->threadsWaitingMutex};
-    for (auto & [thread_id, waiting] : state->threadsWaiting) {
-      if (!waiting) {
-        count++;
-      }
+
+  for (auto & [thread_id, waiting] : state->threadsWaiting) {
+    if (!waiting) {
+      count++;
     }
   }
 
   return count;
+}
+
+void Pool::createThreads() {
+  // Create threads in the pool.
+  unique_lock<mutex> waitingLock{state->controlMutex};
+  if (this->state->threads.size() < this->state->thread_target_count) {
+    this->state->threads.reserve(this->state->thread_target_count);
+  }
+
+  while (this->state->threads.size() < this->state->thread_target_count) {
+    jthread thread{&Pool::Pool::threadLoop, this->state};
+    this->state->threadsWaiting[thread.get_id()] = false;
+    this->state->threads.emplace_back(move(thread));
+  }
 }
 
 void Pool::threadLoop(shared_ptr<State> state) {
@@ -202,7 +204,7 @@ void Pool::threadLoop(shared_ptr<State> state) {
     Job job;
     // Set our waiting state the true.
     {
-      unique_lock<mutex> waitingLock{state->threadsWaitingMutex};
+      unique_lock<mutex> waitingLock{state->controlMutex};
       state->threadsWaiting[thread_id] = true;
     }
 
@@ -220,9 +222,9 @@ void Pool::threadLoop(shared_ptr<State> state) {
         break;
       }
 
+      // Tell the pool that we are no longer waiting.
       {
-        unique_lock<mutex> waitingLock{state->threadsWaitingMutex};
-        // Tell the pool that we are no longer running.
+        unique_lock<mutex> waitingLock{state->controlMutex};
         state->threadsWaiting[thread_id] = false;
       }
 
@@ -237,7 +239,7 @@ void Pool::threadLoop(shared_ptr<State> state) {
 
   // Remove thread_id from the waiting structure.
   {
-    unique_lock<mutex> waitingLock{state->threadsWaitingMutex};
+    unique_lock<mutex> waitingLock{state->controlMutex};
     state->threadsWaiting.erase(thread_id);
   }
 }

@@ -14,9 +14,9 @@ using namespace std;
 using namespace Ghoti::Pool;
 
 function emptyFunc = [](){};
-function threadSleep = [](size_t seconds){
+function threadSleep = [](chrono::milliseconds duration){
   return [=](){
-    this_thread::sleep_for(chrono::seconds{seconds});
+    this_thread::sleep_for(duration);
   };
 };
 
@@ -49,8 +49,8 @@ TEST(JobQueue, Count) {
 
 TEST(StopJoin, Compare) {
   Pool a{3};
-  a.enqueue({threadSleep(1)});
-  a.enqueue({threadSleep(1)});
+  a.enqueue({threadSleep(100ms)});
+  a.enqueue({threadSleep(100ms)});
   a.start();
   this_thread::sleep_for(10ms);
   EXPECT_EQ(a.getThreadCount(), 3);
@@ -72,8 +72,8 @@ TEST(Counts, All) {
   this_thread::sleep_for(10ms);
   EXPECT_EQ(a.getWaitingThreadCount(), 3);
   EXPECT_EQ(a.getRunningThreadCount(), 0);
-  a.enqueue({threadSleep(1)});
-  a.enqueue({threadSleep(1)});
+  a.enqueue({threadSleep(100ms)});
+  a.enqueue({threadSleep(100ms)});
   this_thread::sleep_for(10ms);
   EXPECT_EQ(a.getWaitingThreadCount(), 1);
   EXPECT_EQ(a.getRunningThreadCount(), 2);

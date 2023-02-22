@@ -118,6 +118,11 @@ class Pool {
 
   private:
   /**
+   * Keep creating threads until the limit is reached.
+   */
+  void createThreads();
+
+  /**
    * Common function loop for use by all threads in the thread pool.
    */
   static void threadLoop(std::shared_ptr<State>);
