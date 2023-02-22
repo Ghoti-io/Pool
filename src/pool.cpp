@@ -67,27 +67,27 @@ struct State {
    *
    * This defaults to the number of logical cores on the system.
    */
-  size_t thread_target_count;
+  size_t targetThreadCount;
 };
 }
 
 Pool::Pool() : Pool(thread::hardware_concurrency()) {}
 
-Pool::Pool(size_t thread_count) {
+Pool::Pool(size_t threadCount) {
   this->state = make_shared<State>();
   this->state->terminate = true;
-  this->state->thread_target_count = thread_count;
+  this->state->targetThreadCount = threadCount;
 }
 
 Pool::~Pool() {
-  this->stop();
+  // Causes resource lockup when not ->join().  why?????
+  this->join();
 }
 
 bool Pool::enqueue(Job && job) {
-  {
-    unique_lock<mutex> lock{this->state->queueMutex};
-    this->state->jobs.emplace(move(job));
-  }
+  scoped_lock locks{this->state->queueMutex, this->state->controlMutex};
+
+  this->state->jobs.emplace(move(job));
 
   // Notify a thread that a job is available.
   if (!this->state->terminate) {
@@ -98,13 +98,12 @@ bool Pool::enqueue(Job && job) {
 
 void Pool::start() {
   // Don't try to start the pool if it is already running.
-  if (!this->state->terminate) {
-    return;
-  }
-
-  // Set the stop condition.
   {
-    unique_lock<mutex> lock{this->state->queueMutex};
+    scoped_lock locks{this->state->queueMutex, this->state->controlMutex};
+    if (!this->state->terminate) {
+      return;
+    }
+    // Set the stop condition.
     this->state->terminate = false;
   }
 
@@ -114,7 +113,7 @@ void Pool::start() {
 void Pool::stop() {
   // Set the stop condition.
   {
-    unique_lock<mutex> lock{this->state->queueMutex};
+    scoped_lock locks{this->state->queueMutex, this->state->controlMutex};
 
     // Don't try to stop an already-stopped pool.
     if (this->state->terminate) {
@@ -132,27 +131,42 @@ void Pool::join() {
   // Stop the threads (if not already done).
   this->stop();
 
-  // Join the threads.
-  for (auto & thread : this->state->threads) {
-    thread.join();
-  }
+  {
+    //Causes lockup... why???
+    //scoped_lock<mutex> controlMutexLock{state->controlMutex};
 
-  // Clean up the threads.
-  this->state->threads.clear();
+    // Join the threads.
+    for (auto & thread : this->state->threads) {
+      if (thread.joinable()) {
+        thread.join();
+      }
+    }
+
+    // Clean up the threads.
+    this->state->threads.clear();
+  }
 }
 
 size_t Pool::getJobQueueCount() {
-  unique_lock<mutex> lock{this->state->queueMutex};
+  scoped_lock queueMutexLock{this->state->queueMutex};
   return this->state->jobs.size();
 }
 
+void Pool::setThreadCount(size_t threadCount) {
+  {
+    scoped_lock controlMutexLock{state->controlMutex};
+    this->state->targetThreadCount = threadCount;
+  }
+  this->createThreads();
+}
+
 size_t Pool::getThreadCount() const {
-  unique_lock<mutex> waitingLock{state->controlMutex};
+  scoped_lock controlMutexLock{state->controlMutex};
   return this->state->threads.size();
 }
 
 size_t Pool::getWaitingThreadCount() const {
-  unique_lock<mutex> waitingLock{state->controlMutex};
+  scoped_lock controlMutexLock{state->controlMutex};
   size_t count{0};
 
   for (auto & [thread_id, waiting] : state->threadsWaiting) {
@@ -165,12 +179,12 @@ size_t Pool::getWaitingThreadCount() const {
 }
 
 size_t Pool::getTerminatedThreadCount() const {
-  unique_lock<mutex> waitingLock{state->controlMutex};
+  scoped_lock controlMutexLock{state->controlMutex};
   return this->state->threads.size() - this->state->threadsWaiting.size();
 }
 
 size_t Pool::getRunningThreadCount() const {
-  unique_lock<mutex> waitingLock{state->controlMutex};
+  scoped_lock controlMutexLock{state->controlMutex};
   size_t count{0};
 
   for (auto & [thread_id, waiting] : state->threadsWaiting) {
@@ -184,15 +198,13 @@ size_t Pool::getRunningThreadCount() const {
 
 void Pool::createThreads() {
   // Create threads in the pool.
-  unique_lock<mutex> waitingLock{state->controlMutex};
-  if (this->state->threads.size() < this->state->thread_target_count) {
-    this->state->threads.reserve(this->state->thread_target_count);
+  scoped_lock controlMutexLock{this->state->controlMutex};
+  if (this->state->threads.size() < this->state->targetThreadCount) {
+    this->state->threads.reserve(this->state->targetThreadCount);
   }
 
-  while (this->state->threads.size() < this->state->thread_target_count) {
-    jthread thread{&Pool::Pool::threadLoop, this->state};
-    this->state->threadsWaiting[thread.get_id()] = false;
-    this->state->threads.emplace_back(move(thread));
+  while (this->state->threads.size() < this->state->targetThreadCount) {
+    this->state->threads.emplace_back(jthread{&Pool::Pool::threadLoop, this->state});
   }
 }
 
@@ -204,27 +216,30 @@ void Pool::threadLoop(shared_ptr<State> state) {
     Job job;
     // Set our waiting state the true.
     {
-      unique_lock<mutex> waitingLock{state->controlMutex};
+      scoped_lock controlMutexLock{state->controlMutex};
       state->threadsWaiting[thread_id] = true;
     }
 
     // Try to claim a Job.
     {
-      unique_lock<mutex> lock{state->queueMutex};
+      unique_lock<mutex> queueMutexLock{state->queueMutex};
 
       // Wake up if there is a job or if the terminate flag is set.
-      state->mutexCondition.wait(lock, [&] {
+      state->mutexCondition.wait(queueMutexLock, [&] {
+        scoped_lock controlMutexLock{state->controlMutex};
         return !state->jobs.empty() || state->terminate;
       });
 
-      // Terminate the thread.
-      if (state->terminate) {
-        break;
-      }
-
-      // Tell the pool that we are no longer waiting.
       {
-        unique_lock<mutex> waitingLock{state->controlMutex};
+        scoped_lock controlMutexLock{state->controlMutex};
+
+        // Terminate the thread if needed.
+        if (state->terminate
+            || (state->threads.size() > state->targetThreadCount)) {
+          break;
+        }
+
+        // Tell the pool that we are no longer waiting.
         state->threadsWaiting[thread_id] = false;
       }
 
@@ -235,11 +250,20 @@ void Pool::threadLoop(shared_ptr<State> state) {
 
     // Execute the job.
     job.function();
+
+    {
+      scoped_lock controlMutexLock{state->controlMutex};
+
+      // Terminate this thread if there are too many threads in the pool.
+      if (state->threads.size() > state->targetThreadCount) {
+        break;
+      }
+    }
   }
 
   // Remove thread_id from the waiting structure.
   {
-    unique_lock<mutex> waitingLock{state->controlMutex};
+    scoped_lock controlMutexLock{state->controlMutex};
     state->threadsWaiting.erase(thread_id);
   }
 }

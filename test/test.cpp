@@ -38,6 +38,15 @@ TEST(PoolSize, Specified) {
   EXPECT_EQ(a.getThreadCount(), 0);
 }
 
+TEST(PoolSize, Change) {
+  Pool a{2};
+  EXPECT_EQ(a.getThreadCount(), 0);
+  a.start();
+  EXPECT_EQ(a.getThreadCount(), 2);
+  a.setThreadCount(3);
+  EXPECT_EQ(a.getThreadCount(), 3);
+}
+
 TEST(JobQueue, Count) {
   Pool a{0};
   EXPECT_EQ(a.getJobQueueCount(), 0);

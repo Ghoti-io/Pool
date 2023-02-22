@@ -35,9 +35,11 @@ class Pool {
   Pool();
 
   /**
-   * Thread pool constructor for a specific number of cores.
+   * Thread pool constructor for a specific number of threads.
+   *
+   * @param threadCount The desired number of threads.
    */
-  Pool(size_t thread_count);
+  Pool(size_t threadCount);
 
   /**
    * Thread pool destructor.
@@ -87,6 +89,19 @@ class Pool {
    * @returns The number of jobs currently in the job queue.
    */
   size_t getJobQueueCount();
+
+  /**
+   * Set the thread count.
+   *
+   * If the pool is not running, then no threads will be created.  If the pool
+   * is running and the number specified is higher than the current pool size,
+   * then new threads will be created.  If the number specified is lower than
+   * the current pool size, then threads will be removed as they finish their
+   * tasks.  Threads will not be interrupted.
+   *
+   * @param threadCount The desired thread count.
+   */
+  void setThreadCount(size_t threadCount);
 
   /**
    * Returns the number of threads that are created.
