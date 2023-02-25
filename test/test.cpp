@@ -82,6 +82,7 @@ TEST(Pool, IndependentThreads) {
 
 TEST(PoolSize, Default) {
   // Create a thread pool without specifying the number of threads.
+  // Sleep as needed to allow the threads to react to the request.
   Pool a{};
 
   // Verify that no threads are created yet.
@@ -92,9 +93,10 @@ TEST(PoolSize, Default) {
 
   // Verify that the correct default number of threads are created.
   a.start();
+  this_thread::sleep_for(1ms);
   EXPECT_EQ(a.getThreadCount(), thread::hardware_concurrency());
   EXPECT_EQ(a.getTerminatedThreadCount(), 0);
-  EXPECT_EQ(a.getWaitingThreadCount(), 0);
+  EXPECT_EQ(a.getWaitingThreadCount(), thread::hardware_concurrency());
   EXPECT_EQ(a.getRunningThreadCount(), 0);
 
   // Verify that all threads have been stopped and cleaned up.
