@@ -15,30 +15,29 @@ namespace Ghoti::Pool{
 class State;
 
 /**
- * Function that must be called in order to set up the Global thread pool.
- *
- * This function must be called from the main thread, and no subsequent threads
- * will be created until this function has been called.  It will create a
- * separate monitoring thread which will serve to orchestrate all other thread
- * control processes.
- *
- * The reason for this approach is that the Pool class is designed so that, if
- * the Pool is destroyed, all of its threads will not also be instantly
- * destroyed, but that they will each be signaled to shut down, so that each
- * thread can perform the proper cleanup.  By that time, however, the Pool
- * itself may be destroyed, and there must be some parent thread to perform the
- * cleanup.  That need for cleanup is what this Global thread pool performs.
- */
-void startGlobalPool();
-
-/**
  * Function that must be called in order to terminate and join the Global
  * thread pool.
  *
- * This function must be called before the main thread can terminate.  If it
- * is not called, then the program will not exit.
+ * The global thread pool must be ended before the program can terminate.  The
+ * pool will terminate automatically, on its own, when all of its threads have
+ * self-terminated.  It may be, however, that the threads do not know that they
+ * need to terminate.
+ *
+ * This function will asynchronously request that all threads stop, and then
+ * block until all threads join.
+ *
+ * The main program will not end until all threads have terminated.  It may not
+ * be necessary to call this function explicitly, depending on the design of
+ * your program.
  */
-void endGlobalPool();
+void joinGlobalPool();
+
+/**
+ * Get the total number of threads being tracked by the global thread pool.
+ *
+ * @returns The number of threads being tracked by the global thread pool.
+ */
+size_t getGlobalPoolThreadCount();
 
 /**
  * Holds information about a job.

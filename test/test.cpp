@@ -24,6 +24,62 @@ function threadSleep = [](chrono::milliseconds duration){
   };
 };
 
+TEST(JoinGlobalPool, Repeated) {
+  // Verify that calling joinGlobalPool() repeatedly doesn't break anything.
+  EXPECT_NO_THROW(joinGlobalPool());
+  EXPECT_NO_THROW(joinGlobalPool());
+  EXPECT_NO_THROW(joinGlobalPool());
+}
+
+TEST(JoinGlobalPool, AsJoin) {
+  // Verify that calling joinGlobalPool() while a thread is running
+  // will indeed work.
+
+  // First, verify that no other threads are running.
+  EXPECT_NO_THROW(joinGlobalPool());
+
+  {
+    // Create a pool of two threads and one job
+    Pool a{2};
+    a.enqueue({threadSleep(10ms)});
+    a.start();
+
+    // Wait to ensure that the thread pool has time to start the thread.
+    this_thread::sleep_for(1ms);
+  }
+
+  // Verify that there is one thread running, even though the Pool has been
+  // destroyed.
+  EXPECT_EQ(getGlobalPoolThreadCount(), 2);
+
+  // Verify that the global join will indeed wait until all threads are joined.
+  joinGlobalPool();
+  EXPECT_EQ(getGlobalPoolThreadCount(), 0);
+}
+
+TEST(Pool, IndependentThreads) {
+  // Verify that two pools of threads create independent threads in the pool.
+  EXPECT_NO_THROW(joinGlobalPool());
+
+  Pool a{2};
+  Pool b{3};
+
+  // Verify that there are no threads starting out.
+  EXPECT_EQ(getGlobalPoolThreadCount(), 0);
+
+  // Verify that 2 threads are created for `a`.
+  a.start();
+  EXPECT_EQ(getGlobalPoolThreadCount(), 2);
+
+  // Verify that 3 additional threads are created for `b`.
+  b.start();
+  EXPECT_EQ(getGlobalPoolThreadCount(), 5);
+
+  // Verify that 3 threads were joined for `b` and that two remain for `a`.
+  b.join();
+  EXPECT_EQ(getGlobalPoolThreadCount(), 2);
+}
+
 TEST(PoolSize, Default) {
   // Create a thread pool without specifying the number of threads.
   Pool a{};
@@ -120,10 +176,7 @@ TEST(StopJoin, Compare) {
 }
 
 int main(int argc, char** argv) {
-  startGlobalPool();
   testing::InitGoogleTest(&argc, argv);
-  auto result = RUN_ALL_TESTS();
-  endGlobalPool();
-  return result;
+  return RUN_ALL_TESTS();
 }
 

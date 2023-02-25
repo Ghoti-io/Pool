@@ -13,6 +13,7 @@
 #include <semaphore>
 #include <vector>
 #include "pool.hpp"
+#include <iostream>
 
 using namespace std;
 using namespace Ghoti::Pool;
@@ -47,6 +48,16 @@ static void threadLoop(stop_token token, shared_ptr<State> state);
 /**
  * The thread of execution used by the global thread pool, from which all other
  * threads are created and controlled.
+ *
+ * This thread will be responsible for creating and orchestrating all other
+ * thread control processes.
+ *
+ * The reason for this approach is that the Pool class is designed so that, if
+ * the Pool is destroyed, all of its threads will not also be instantly
+ * destroyed, but that they will each be signaled to shut down, so that each
+ * thread can perform the proper cleanup.  By that time, however, the Pool
+ * itself may be destroyed, and there must be some parent thread to perform the
+ * cleanup.  That need for cleanup is what this Global thread pool performs.
  */
 static void globalPoolLoop();
 
@@ -80,43 +91,21 @@ static queue<thread::id> globalThreadStopQueue;
 static map<thread::id, ThreadInfo> threads;
 
 /**
- * The singleton reference to the global thread pool thread.
+ * Control structure to determine whether or not the global thread pool thread
+ * has been started (or needs to be started).
  */
-static jthread globalPool{};
-
-/**
- * Control structure used by the global thread pool to indicate that the pool
- * should terminate.
- */
-static bool terminatePool;
-
-
-void startGlobalPool() {
-  if (!globalPool.joinable()) {
-    scoped_lock lock{globalMutex};
-    terminatePool = false;
-    globalPool = jthread{globalPoolLoop};
-  }
-}
-
-
-void endGlobalPool() {
-  {
-    scoped_lock lock{globalMutex};
-    terminatePool = true;
-    // Wake up the global pool and end it.
-    globalThreadSemaphore.release();
-  }
-  globalPool.join();
-}
+binary_semaphore globalPoolNotStarted{1};
 
 
 static void globalPoolLoop() {
-  terminatePool = false;
-
-  while (!terminatePool) {
+  // Continue looping until a `break` condition happens.
+  // The loop breaks when there is nothing queued up and no threads left
+  // running.  When this loop breaks, the global thread pool queue will
+  // terminate.  A new thread will be automatically created, however, when
+  // any request is made for a new thread.
+  while (true) {
     // Wait until there is work to do.
-    globalThreadSemaphore.acquire();
+    globalThreadSemaphore.try_acquire_for(50ms);
 
     // Prevent race conditions.
     scoped_lock lock{globalMutex};
@@ -152,21 +141,42 @@ static void globalPoolLoop() {
       // Look for the thread so that it can be joined.
       if (threads.count(threadId)) {
         auto & [thread, notifiers] = threads[threadId];
-        if (thread.joinable()) {
-          // Join the thread.
-          thread.join();
 
-          // Make appropriate notifications.
-          for (auto & notifier : notifiers) {
-            notifier.set_value();
-          }
-
-          // Clean up.
-          threads.erase(threadId);
+        // Make appropriate notifications.
+        for (auto & notifier : notifiers) {
+          notifier.set_value();
         }
+
+        // Clean up.
+        // The thread will automatically join when it is erased here.
+        threads.erase(threadId);
       }
     }
+
+    // globalMutex is still acquired, which means that nothing else has been
+    // able to write to our queues.  If they are all empty, and there are no
+    // threads to be tracked, then terminate the global thread pool.  Another
+    // one will be started if required by future thread requests.
+    if (globalThreadCreateQueue.empty()
+        && globalThreadStopQueue.empty()
+        && globalThreadJoinQueue.empty()
+        && threads.empty()) {
+      // It is possible that there are many more signals waiting, so clean out
+      // that semaphore.
+      while (globalThreadSemaphore.try_acquire()) {}
+
+      // Allow another pool to start, if required.
+      globalPoolNotStarted.release();
+
+      // Exit this thread.
+      break;
+    }
+
+    // globalMutex is released.
   }
+
+  // globalPool thread is exiting.  The thread will destroy itself, but since
+  // it was detached, no other cleanup needs to be done.
 }
 
 
@@ -174,9 +184,15 @@ static thread::id createThread(shared_ptr<State> state) {
   // Create the promise that will be passed to the globalPool.
   promise<thread::id> notifier;
   auto notifierResult = notifier.get_future();
+
   {
     // Prevent race conditions.
     scoped_lock lock{globalMutex};
+
+    // Start a global thread pool (if it does not already exist).
+    if (globalPoolNotStarted.try_acquire()) {
+      jthread{globalPoolLoop}.detach();
+    }
 
     // Put the promise on the queue.
     globalThreadCreateQueue.emplace(move(notifier), state);
@@ -184,6 +200,7 @@ static thread::id createThread(shared_ptr<State> state) {
     // Let the globalPool know that there is work to do.
     globalThreadSemaphore.release();
   }
+
   // Block until the thread id is returned.
   return notifierResult.get();
 }
@@ -228,6 +245,41 @@ static vector<future<void>> joinThreads(const vector<thread::id> & threadIds) {
 }
 
 
+void joinGlobalPool() {
+  // Get a list of all threads and join them.
+  vector<future<void>> notifierResults{};
+
+  {
+    // Prevent race conditions.
+    scoped_lock lock{globalMutex};
+
+    // Tell all the threads to stop, and set a join notification.
+    for (auto & [threadId, threadInfo] : threads) {
+
+      // Create the promise that will be passed to the correct thread.
+      promise<void> notifier;
+
+      // Save the notifier.
+      notifierResults.push_back(notifier.get_future());
+
+      // Signal for the thread to stop.
+      globalThreadStopQueue.emplace(threadId);
+
+      // Add the promise to the thread's notification list for when it finishes.
+      threads[threadId].second.push_back(move(notifier));
+    }
+  }
+
+  // Let the globalPool know that there is work to do.
+  globalThreadSemaphore.release();
+
+  // Wait for the joins.
+  for (auto & notifier : notifierResults) {
+    notifier.get();
+  }
+}
+
+
 static bool stopThreads(const vector<thread::id> & threadIds) {
   // Prevent race conditions.
   scoped_lock lock{globalMutex};
@@ -244,6 +296,13 @@ static bool stopThreads(const vector<thread::id> & threadIds) {
   return true;
 }
 
+
+size_t getGlobalPoolThreadCount() {
+  // Prevent race conditions.
+  scoped_lock lock{globalMutex};
+
+  return threads.size();
+}
 
 /**
  * Structure to hold the state of the pool.
