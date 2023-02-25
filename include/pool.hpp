@@ -14,6 +14,9 @@ namespace Ghoti::Pool{
 // Forward declaration.
 class State;
 
+void startGlobalPool();
+void endGlobalPool();
+
 /**
  * Holds information about a job.
  */
@@ -140,7 +143,7 @@ class Pool {
   /**
    * Common function loop for use by all threads in the thread pool.
    */
-  static void threadLoop(std::shared_ptr<State>);
+  //static void threadLoop(std::shared_ptr<State>);
 
   /**
    * Pointer to the shared state of the thread pool.
