@@ -86,34 +86,66 @@ TEST(PoolSize, Default) {
 
   // Verify that no threads are created yet.
   EXPECT_EQ(a.getThreadCount(), 0);
+  EXPECT_EQ(a.getTerminatedThreadCount(), 0);
+  EXPECT_EQ(a.getWaitingThreadCount(), 0);
+  EXPECT_EQ(a.getRunningThreadCount(), 0);
 
   // Verify that the correct default number of threads are created.
   a.start();
   EXPECT_EQ(a.getThreadCount(), thread::hardware_concurrency());
+  EXPECT_EQ(a.getTerminatedThreadCount(), 0);
+  EXPECT_EQ(a.getWaitingThreadCount(), 0);
+  EXPECT_EQ(a.getRunningThreadCount(), 0);
 
   // Verify that all threads have been stopped and cleaned up.
   a.join();
   EXPECT_EQ(a.getThreadCount(), 0);
+  EXPECT_EQ(a.getTerminatedThreadCount(), thread::hardware_concurrency());
+  EXPECT_EQ(a.getWaitingThreadCount(), 0);
+  EXPECT_EQ(a.getRunningThreadCount(), 0);
 }
 
 TEST(PoolSize, Specified) {
   // Create a thread pool with 2 threads.
+  // Sleep as needed to allow the threads to react to the request.
   Pool a{2};
 
   // Verify that no threads are created yet.
   EXPECT_EQ(a.getThreadCount(), 0);
+  EXPECT_EQ(a.getTerminatedThreadCount(), 0);
+  EXPECT_EQ(a.getWaitingThreadCount(), 0);
+  EXPECT_EQ(a.getRunningThreadCount(), 0);
 
   // Verify that 2 threads have now been created.
   a.start();
+  this_thread::sleep_for(1ms);
   EXPECT_EQ(a.getThreadCount(), 2);
+  EXPECT_EQ(a.getTerminatedThreadCount(), 0);
+  EXPECT_EQ(a.getWaitingThreadCount(), 2);
+  EXPECT_EQ(a.getRunningThreadCount(), 0);
 
   // Verify that increasing the thread count works.
   a.setThreadCount(3);
+  this_thread::sleep_for(1ms);
   EXPECT_EQ(a.getThreadCount(), 3);
+  EXPECT_EQ(a.getTerminatedThreadCount(), 0);
+  EXPECT_EQ(a.getWaitingThreadCount(), 3);
+  EXPECT_EQ(a.getRunningThreadCount(), 0);
+
+  // Verify that decreasing the thread count works.
+  a.setThreadCount(1);
+  this_thread::sleep_for(1ms);
+  EXPECT_EQ(a.getThreadCount(), 1);
+  EXPECT_EQ(a.getTerminatedThreadCount(), 2);
+  EXPECT_EQ(a.getWaitingThreadCount(), 1);
+  EXPECT_EQ(a.getRunningThreadCount(), 0);
 
   // Verify that all threads have been stopped and cleaned up.
   a.join();
   EXPECT_EQ(a.getThreadCount(), 0);
+  EXPECT_EQ(a.getTerminatedThreadCount(), 3);
+  EXPECT_EQ(a.getWaitingThreadCount(), 0);
+  EXPECT_EQ(a.getRunningThreadCount(), 0);
 }
 
 TEST(JobQueue, Count) {

@@ -453,11 +453,18 @@ size_t Pool::getJobQueueCount() {
 
 
 void Pool::setThreadCount(size_t threadCount) {
+  // Set the target thread count.
   {
     scoped_lock controlMutexLock{state->controlMutex};
     this->state->targetThreadCount = threadCount;
   }
+
+  // Create new threads if needed.
   this->createThreads();
+
+  // Notify threads so that they can remove themselves (or take something from
+  // the queue) if needed.
+  this->state->mutexCondition.notify_all();
 }
 
 
@@ -530,7 +537,10 @@ static void Ghoti::Pool::threadLoop(stop_token token, shared_ptr<State> state) {
       // Wake up if there is a job or if the terminate flag is set.
       state->mutexCondition.wait(queueMutexLock, [&] {
         scoped_lock controlMutexLock{state->controlMutex};
-        return !state->jobs.empty() || state->terminate;
+        return state->terminate
+            || (state->threads.size() > state->targetThreadCount)
+            || token.stop_requested()
+            || !state->jobs.empty();
       });
 
       {
