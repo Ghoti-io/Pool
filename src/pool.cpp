@@ -19,13 +19,44 @@ using namespace Ghoti::Pool;
 
 namespace Ghoti::Pool {
 
-static void threadLoop(stop_token token, shared_ptr<State> state);
-static void globalPoolLoop();
-static thread::id createThread(shared_ptr<State> state);
-
+/**
+ * Container to hold the instance of the thread as well as a collection of
+ * promises that must be fulfilled when the thread terminates.
+ */
 using ThreadInfo = pair<jthread, vector<promise<void>>>;
+
+/**
+ * Protects access to the control structures of the global thread pool.
+ */
 static mutex globalMutex;
+
+/**
+ * Used to signal to the global thread pool that there is some action waiting
+ * to be performed.
+ */
 static counting_semaphore globalThreadSemaphore{0};
+
+/**
+ * Common function loop for use by all threads in the thread pool.
+ *
+ * @param token Token indicating that this jthread has been asked to stop.
+ * @param state The shared pool state.
+ */
+static void threadLoop(stop_token token, shared_ptr<State> state);
+
+/**
+ * The thread of execution used by the global thread pool, from which all other
+ * threads are created and controlled.
+ */
+static void globalPoolLoop();
+
+/**
+ * Function that will ask the global thread pool to create an additional thread.
+ *
+ * @param state The shared state that will be supplied to the thread.
+ * @return The id of the thread that was created.
+ */
+static thread::id createThread(shared_ptr<State> state);
 
 /**
  * Job queue for threads that need to be created.
@@ -42,9 +73,23 @@ static queue<thread::id> globalThreadJoinQueue;
  */
 static queue<thread::id> globalThreadStopQueue;
 
+/**
+ * Control structure used by the global thread pool to track threads and their
+ * associated metadata.
+ */
 static map<thread::id, ThreadInfo> threads;
+
+/**
+ * The singleton reference to the global thread pool thread.
+ */
 static jthread globalPool{};
+
+/**
+ * Control structure used by the global thread pool to indicate that the pool
+ * should terminate.
+ */
 static bool terminatePool;
+
 
 void startGlobalPool() {
   if (!globalPool.joinable()) {
@@ -53,6 +98,7 @@ void startGlobalPool() {
     globalPool = jthread{globalPoolLoop};
   }
 }
+
 
 void endGlobalPool() {
   {
@@ -63,6 +109,7 @@ void endGlobalPool() {
   }
   globalPool.join();
 }
+
 
 static void globalPoolLoop() {
   terminatePool = false;
@@ -122,6 +169,7 @@ static void globalPoolLoop() {
   }
 }
 
+
 static thread::id createThread(shared_ptr<State> state) {
   // Create the promise that will be passed to the globalPool.
   promise<thread::id> notifier;
@@ -139,6 +187,7 @@ static thread::id createThread(shared_ptr<State> state) {
   // Block until the thread id is returned.
   return notifierResult.get();
 }
+
 
 static vector<future<void>> joinThreads(const vector<thread::id> & threadIds) {
   vector<future<void>> notifierResults{};
@@ -252,7 +301,9 @@ struct State {
 };
 }
 
+
 Pool::Pool() : Pool(thread::hardware_concurrency()) {}
+
 
 Pool::Pool(size_t threadCount) {
   this->state = make_shared<State>();
@@ -260,9 +311,11 @@ Pool::Pool(size_t threadCount) {
   this->state->targetThreadCount = threadCount;
 }
 
+
 Pool::~Pool() {
   this->stop();
 }
+
 
 bool Pool::enqueue(Job && job) {
   scoped_lock locks{this->state->queueMutex, this->state->controlMutex};
@@ -275,6 +328,7 @@ bool Pool::enqueue(Job && job) {
   }
   return true;
 }
+
 
 void Pool::start() {
   // Don't try to start the pool if it is already running.
@@ -290,6 +344,7 @@ void Pool::start() {
   this->createThreads();
 }
 
+
 void Pool::stop() {
   // Set the stop condition.
   {
@@ -302,6 +357,7 @@ void Pool::stop() {
   // Wake up all threads so that they will terminate themselves.
   this->state->mutexCondition.notify_all();
 }
+
 
 void Pool::join() {
   // Join the threads.
@@ -324,10 +380,12 @@ void Pool::join() {
   }
 }
 
+
 size_t Pool::getJobQueueCount() {
   scoped_lock queueMutexLock{this->state->queueMutex};
   return this->state->jobs.size();
 }
+
 
 void Pool::setThreadCount(size_t threadCount) {
   {
@@ -337,10 +395,12 @@ void Pool::setThreadCount(size_t threadCount) {
   this->createThreads();
 }
 
+
 size_t Pool::getThreadCount() const {
   scoped_lock controlMutexLock{state->controlMutex};
   return this->state->threads.size();
 }
+
 
 size_t Pool::getWaitingThreadCount() const {
   scoped_lock controlMutexLock{state->controlMutex};
@@ -355,10 +415,12 @@ size_t Pool::getWaitingThreadCount() const {
   return count;
 }
 
+
 size_t Pool::getTerminatedThreadCount() const {
   scoped_lock controlMutexLock{state->controlMutex};
   return this->state->threads.size() - this->state->threadsWaiting.size();
 }
+
 
 size_t Pool::getRunningThreadCount() const {
   scoped_lock controlMutexLock{state->controlMutex};
@@ -373,17 +435,16 @@ size_t Pool::getRunningThreadCount() const {
   return count;
 }
 
+
 void Pool::createThreads() {
   scoped_lock controlMutexLock{this->state->controlMutex};
-  if (this->state->threads.size() < this->state->targetThreadCount) {
-    this->state->threads.reserve(this->state->targetThreadCount);
-  }
 
   // Create threads in the pool.
   while (this->state->threads.size() < this->state->targetThreadCount) {
     this->state->threads.push_back(createThread(this->state));
   }
 }
+
 
 static void Ghoti::Pool::threadLoop(stop_token token, shared_ptr<State> state) {
   auto thread_id = this_thread::get_id();
