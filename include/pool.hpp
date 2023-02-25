@@ -163,11 +163,6 @@ class Pool {
   void createThreads();
 
   /**
-   * Common function loop for use by all threads in the thread pool.
-   */
-  //static void threadLoop(std::shared_ptr<State>);
-
-  /**
    * Pointer to the shared state of the thread pool.
    */
   std::shared_ptr<State> state;

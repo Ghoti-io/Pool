@@ -161,7 +161,7 @@ TEST(StopJoin, Compare) {
 
   // Verify that the counts of the threads and their disposition are correct.
   EXPECT_EQ(a.getTerminatedThreadCount(), 1);
-  EXPECT_EQ(a.getThreadCount(), 3);
+  EXPECT_EQ(a.getThreadCount(), 2);
   EXPECT_EQ(a.getWaitingThreadCount(), 0);
   EXPECT_EQ(a.getRunningThreadCount(), 2);
 
@@ -169,7 +169,7 @@ TEST(StopJoin, Compare) {
   a.join();
 
   // Verify that the counts of the threads and their disposition are correct.
-  EXPECT_EQ(a.getTerminatedThreadCount(), 0);
+  EXPECT_EQ(a.getTerminatedThreadCount(), 3);
   EXPECT_EQ(a.getThreadCount(), 0);
   EXPECT_EQ(a.getWaitingThreadCount(), 0);
   EXPECT_EQ(a.getRunningThreadCount(), 0);

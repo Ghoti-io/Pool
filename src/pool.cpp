@@ -11,6 +11,7 @@
 #include <thread>
 #include <queue>
 #include <semaphore>
+#include <set>
 #include <vector>
 #include "pool.hpp"
 #include <iostream>
@@ -206,7 +207,7 @@ static thread::id createThread(shared_ptr<State> state) {
 }
 
 
-static vector<future<void>> joinThreads(const vector<thread::id> & threadIds) {
+static vector<future<void>> joinThreads(const set<thread::id> & threadIds) {
   vector<future<void>> notifierResults{};
 
   {
@@ -280,7 +281,7 @@ void joinGlobalPool() {
 }
 
 
-static bool stopThreads(const vector<thread::id> & threadIds) {
+static bool stopThreads(const set<thread::id> & threadIds) {
   // Prevent race conditions.
   scoped_lock lock{globalMutex};
 
@@ -327,12 +328,17 @@ struct State {
   /**
    * Collection of available threads.
    */
-  vector<thread::id> threads;
+  set<thread::id> threads;
 
   /**
    * Track the waiting state of each thread.
    */
   map<thread::id, bool> threadsWaiting;
+
+  /**
+   * Track the threads that have been terminated.
+   */
+  set<thread::id> threadsTerminated;
 
   /**
    * Queue of jobs waiting to be assigned to a thread.
@@ -477,7 +483,7 @@ size_t Pool::getWaitingThreadCount() const {
 
 size_t Pool::getTerminatedThreadCount() const {
   scoped_lock controlMutexLock{state->controlMutex};
-  return this->state->threads.size() - this->state->threadsWaiting.size();
+  return this->state->threadsTerminated.size();
 }
 
 
@@ -500,13 +506,13 @@ void Pool::createThreads() {
 
   // Create threads in the pool.
   while (this->state->threads.size() < this->state->targetThreadCount) {
-    this->state->threads.push_back(createThread(this->state));
+    this->state->threads.insert(createThread(this->state));
   }
 }
 
 
 static void Ghoti::Pool::threadLoop(stop_token token, shared_ptr<State> state) {
-  auto thread_id = this_thread::get_id();
+  auto threadId = this_thread::get_id();
 
   // The thread loop will continue forever unless the terminate flag is set.
   while (true) {
@@ -514,7 +520,7 @@ static void Ghoti::Pool::threadLoop(stop_token token, shared_ptr<State> state) {
     // Set our waiting state the true.
     {
       scoped_lock controlMutexLock{state->controlMutex};
-      state->threadsWaiting[thread_id] = true;
+      state->threadsWaiting[threadId] = true;
     }
 
     // Try to claim a Job.
@@ -523,6 +529,7 @@ static void Ghoti::Pool::threadLoop(stop_token token, shared_ptr<State> state) {
 
       // Wake up if there is a job or if the terminate flag is set.
       state->mutexCondition.wait(queueMutexLock, [&] {
+        scoped_lock controlMutexLock{state->controlMutex};
         return !state->jobs.empty() || state->terminate;
       });
 
@@ -533,11 +540,14 @@ static void Ghoti::Pool::threadLoop(stop_token token, shared_ptr<State> state) {
         if (state->terminate
             || (state->threads.size() > state->targetThreadCount)
             || token.stop_requested()) {
+          state->threads.erase(threadId);
+          state->threadsWaiting.erase(threadId);
+          state->threadsTerminated.insert(threadId);
           break;
         }
 
         // Tell the pool that we are no longer waiting.
-        state->threadsWaiting[thread_id] = false;
+        state->threadsWaiting[threadId] = false;
       }
 
       // Claim a job.
@@ -547,27 +557,12 @@ static void Ghoti::Pool::threadLoop(stop_token token, shared_ptr<State> state) {
 
     // Execute the job.
     job.function();
-
-    {
-      scoped_lock controlMutexLock{state->controlMutex};
-
-      // Terminate this thread if there are too many threads in the pool.
-      if (state->threads.size() > state->targetThreadCount) {
-        break;
-      }
-    }
-  }
-
-  // Remove thread_id from the waiting structure.
-  {
-    scoped_lock controlMutexLock{state->controlMutex};
-    state->threadsWaiting.erase(thread_id);
   }
 
   {
     // Record that this thread is terminating.
     scoped_lock lock{globalMutex};
-    globalThreadJoinQueue.emplace(thread_id);
+    globalThreadJoinQueue.emplace(threadId);
 
     // Let the globalPool know that there is work to do.
     globalThreadSemaphore.release();
