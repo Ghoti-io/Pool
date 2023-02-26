@@ -14,7 +14,6 @@
 #include <set>
 #include <vector>
 #include "pool.hpp"
-#include <iostream>
 
 using namespace std;
 using namespace Ghoti::Pool;
@@ -63,17 +62,9 @@ static void threadLoop(stop_token token, shared_ptr<State> state);
 static void globalPoolLoop();
 
 /**
- * Function that will ask the global thread pool to create an additional thread.
- *
- * @param state The shared state that will be supplied to the thread.
- * @return The id of the thread that was created.
- */
-static thread::id createThread(shared_ptr<State> state);
-
-/**
  * Job queue for threads that need to be created.
  */
-static queue<pair<promise<thread::id>, shared_ptr<State>>> globalThreadCreateQueue;
+static queue<pair<promise<thread::id>, ThreadFunction>> globalThreadCreateQueue;
 
 /**
  * Job queue of thread ids that need to be joined.
@@ -113,11 +104,11 @@ static void globalPoolLoop() {
 
     // Create a thread.
     while (!globalThreadCreateQueue.empty()) {
-      auto [notifier, state] = move(globalThreadCreateQueue.front());
+      auto [notifier, threadFunction] = move(globalThreadCreateQueue.front());
       globalThreadCreateQueue.pop();
 
       // Create the thread and put it into the control structure.
-      jthread thread{threadLoop, state};
+      jthread thread{threadFunction};
       auto threadId = thread.get_id();
       threads[threadId] = ThreadInfo{move(thread), vector<promise<void>>{}};
 
@@ -181,7 +172,7 @@ static void globalPoolLoop() {
 }
 
 
-static thread::id createThread(shared_ptr<State> state) {
+thread::id createThread(ThreadFunction func) {
   // Create the promise that will be passed to the globalPool.
   promise<thread::id> notifier;
   auto notifierResult = notifier.get_future();
@@ -196,7 +187,7 @@ static thread::id createThread(shared_ptr<State> state) {
     }
 
     // Put the promise on the queue.
-    globalThreadCreateQueue.emplace(move(notifier), state);
+    globalThreadCreateQueue.emplace(move(notifier), move(func));
 
     // Let the globalPool know that there is work to do.
     globalThreadSemaphore.release();
@@ -513,7 +504,9 @@ void Pool::createThreads() {
 
   // Create threads in the pool.
   while (this->state->threads.size() < this->state->targetThreadCount) {
-    this->state->threads.insert(createThread(this->state));
+    this->state->threads.insert(createThread([state = this->state](stop_token token) -> void {
+      return Ghoti::Pool::threadLoop(token, state);
+    }));
   }
 }
 

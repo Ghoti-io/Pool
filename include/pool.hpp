@@ -9,10 +9,24 @@
 
 #include <functional>
 #include <memory>
+#include <stop_token>
 
 namespace Ghoti::Pool{
 // Forward declaration.
 class State;
+
+/**
+ * Function type used to create the thread pool threads.
+ */
+using ThreadFunction = std::function<void(std::stop_token)>;
+
+/**
+ * Function that will ask the global thread pool to create an additional thread.
+ *
+ * @param func The function which will be provided to the thread for execution.
+ * @return The id of the thread that was created.
+ */
+std::thread::id createThread(ThreadFunction func);
 
 /**
  * Function that must be called in order to terminate and join the Global
