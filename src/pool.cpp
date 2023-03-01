@@ -24,18 +24,23 @@ namespace Ghoti::Pool {
  * Container to hold the instance of the thread as well as a collection of
  * promises that must be fulfilled when the thread terminates.
  */
-using ThreadInfo = pair<jthread, vector<promise<void>>>;
+using ThreadInfo = pair<function<void()>, vector<promise<void>>>;
+
+/**
+ * The singleton reference to the global thread pool thread.
+ */
+static jthread globalPool{};
 
 /**
  * Protects access to the control structures of the global thread pool.
  */
-static mutex globalMutex;
+static auto globalMutex = make_shared<mutex>();
 
 /**
  * Used to signal to the global thread pool that there is some action waiting
  * to be performed.
  */
-static counting_semaphore globalThreadSemaphore{0};
+static auto globalThreadSemaphore = make_shared<binary_semaphore>(0);
 
 /**
  * Common function loop for use by all threads in the thread pool.
@@ -64,32 +69,39 @@ static void globalPoolLoop();
 /**
  * Job queue for threads that need to be created.
  */
-static queue<pair<promise<thread::id>, ThreadFunction>> globalThreadCreateQueue;
+static auto globalThreadCreateQueue = make_shared<queue<pair<promise<thread::id>, ThreadFunction>>>();
 
 /**
  * Job queue of thread ids that need to be joined.
  */
-static queue<thread::id> globalThreadJoinQueue;
+static auto globalThreadJoinQueue = make_shared<queue<thread::id>>();
 
 /**
  * Job queue of thread ids that need to be stopped.
  */
-static queue<thread::id> globalThreadStopQueue;
+static auto globalThreadStopQueue = make_shared<queue<thread::id>>();
 
 /**
  * Control structure used by the global thread pool to track threads and their
  * associated metadata.
  */
-static map<thread::id, ThreadInfo> threads;
+static auto threads = make_shared<map<thread::id, ThreadInfo>>();
 
 /**
  * Control structure to determine whether or not the global thread pool thread
  * has been started (or needs to be started).
  */
-binary_semaphore globalPoolNotStarted{1};
+static auto globalPoolNotStarted = make_shared<binary_semaphore>(1);
 
 
 static void globalPoolLoop() {
+  auto globalThreadSemaphore = Ghoti::Pool::globalThreadSemaphore;
+  auto globalMutex = Ghoti::Pool::globalMutex;
+  auto globalThreadCreateQueue = Ghoti::Pool::globalThreadCreateQueue;
+  auto globalThreadStopQueue = Ghoti::Pool::globalThreadStopQueue;
+  auto globalThreadJoinQueue = Ghoti::Pool::globalThreadJoinQueue;
+  auto threads = Ghoti::Pool::threads;
+
   // Continue looping until a `break` condition happens.
   // The loop breaks when there is nothing queued up and no threads left
   // running.  When this loop breaks, the global thread pool queue will
@@ -97,51 +109,50 @@ static void globalPoolLoop() {
   // any request is made for a new thread.
   while (true) {
     // Wait until there is work to do.
-    globalThreadSemaphore.try_acquire_for(50ms);
+    globalThreadSemaphore->acquire();
 
     // Prevent race conditions.
-    scoped_lock lock{globalMutex};
+    scoped_lock lock{*globalMutex};
 
     // Create a thread.
-    while (!globalThreadCreateQueue.empty()) {
-      auto [notifier, threadFunction] = move(globalThreadCreateQueue.front());
-      globalThreadCreateQueue.pop();
+    while (!globalThreadCreateQueue->empty()) {
+      auto [notifier, threadFunction] = move(globalThreadCreateQueue->front());
+      globalThreadCreateQueue->pop();
 
       // Create the thread and put it into the control structure.
       jthread thread{threadFunction};
       auto threadId = thread.get_id();
-      threads[threadId] = ThreadInfo{move(thread), vector<promise<void>>{}};
+      thread.detach();
+      (*threads)[threadId] = ThreadInfo{{}, vector<promise<void>>{}};
 
       // Set the promise return value with the thread id that was created.
       notifier.set_value(threadId);
     }
     // Stop a thread.
-    while (!globalThreadStopQueue.empty()) {
-      auto threadId = globalThreadStopQueue.front();
-      globalThreadStopQueue.pop();
+    while (!globalThreadStopQueue->empty()) {
+      auto threadId = globalThreadStopQueue->front();
+      globalThreadStopQueue->pop();
 
       // Tell the thread to stop.
-      if (threads.count(threadId)) {
-        threads[threadId].first.request_stop();
+      if (threads->count(threadId) && (*threads)[threadId].first) {
+        (*threads)[threadId].first();
       }
     }
     // Join a terminated thread.
-    while (!globalThreadJoinQueue.empty()) {
-      auto threadId = globalThreadJoinQueue.front();
-      globalThreadJoinQueue.pop();
+    while (!globalThreadJoinQueue->empty()) {
+      auto threadId = globalThreadJoinQueue->front();
+      globalThreadJoinQueue->pop();
 
       // Look for the thread so that it can be joined.
-      if (threads.count(threadId)) {
-        auto & [thread, notifiers] = threads[threadId];
-
+      if (threads->count(threadId)) {
         // Make appropriate notifications.
-        for (auto & notifier : notifiers) {
+        for (auto & notifier : (*threads)[threadId].second) {
           notifier.set_value();
         }
 
         // Clean up.
         // The thread will automatically join when it is erased here.
-        threads.erase(threadId);
+        threads->erase(threadId);
       }
     }
 
@@ -149,16 +160,16 @@ static void globalPoolLoop() {
     // able to write to our queues.  If they are all empty, and there are no
     // threads to be tracked, then terminate the global thread pool.  Another
     // one will be started if required by future thread requests.
-    if (globalThreadCreateQueue.empty()
-        && globalThreadStopQueue.empty()
-        && globalThreadJoinQueue.empty()
-        && threads.empty()) {
+    if (globalThreadCreateQueue->empty()
+        && globalThreadStopQueue->empty()
+        && globalThreadJoinQueue->empty()
+        && threads->empty()) {
       // It is possible that there are many more signals waiting, so clean out
       // that semaphore.
-      while (globalThreadSemaphore.try_acquire()) {}
+      while (globalThreadSemaphore->try_acquire()) {}
 
       // Allow another pool to start, if required.
-      globalPoolNotStarted.release();
+      globalPoolNotStarted->release();
 
       // Exit this thread.
       break;
@@ -179,18 +190,18 @@ thread::id createThread(ThreadFunction func) {
 
   {
     // Prevent race conditions.
-    scoped_lock lock{globalMutex};
+    scoped_lock lock{*globalMutex};
 
     // Start a global thread pool (if it does not already exist).
-    if (globalPoolNotStarted.try_acquire()) {
-      jthread{globalPoolLoop}.detach();
+    if (globalPoolNotStarted->try_acquire()) {
+      globalPool = jthread{globalPoolLoop};
     }
 
     // Put the promise on the queue.
-    globalThreadCreateQueue.emplace(move(notifier), move(func));
+    globalThreadCreateQueue->emplace(move(notifier), move(func));
 
     // Let the globalPool know that there is work to do.
-    globalThreadSemaphore.release();
+    globalThreadSemaphore->release();
   }
 
   // Block until the thread id is returned.
@@ -203,7 +214,7 @@ static vector<future<void>> joinThreads(const set<thread::id> & threadIds) {
 
   {
     // Prevent race conditions.
-    scoped_lock lock{globalMutex};
+    scoped_lock lock{*globalMutex};
 
     // First, tell all the threads to stop.
     for (auto & threadId : threadIds) {
@@ -211,7 +222,7 @@ static vector<future<void>> joinThreads(const set<thread::id> & threadIds) {
       // Verify that there is a thread to join.
       // The processing loop will make this check as well, but we must also
       // check here so that we can add the notifier.
-      if (!threads.count(threadId)) {
+      if (!threads->count(threadId)) {
         continue;
       }
 
@@ -222,15 +233,15 @@ static vector<future<void>> joinThreads(const set<thread::id> & threadIds) {
       notifierResults.push_back(notifier.get_future());
 
       // Signal for the thread to stop.
-      globalThreadStopQueue.emplace(threadId);
+      globalThreadStopQueue->emplace(threadId);
 
       // Add the promise to the thread's notification list for when it finishes.
-      threads[threadId].second.push_back(move(notifier));
+      (*threads)[threadId].second.push_back(move(notifier));
     }
   }
 
   // Let the globalPool know that there is work to do.
-  globalThreadSemaphore.release();
+  globalThreadSemaphore->release();
 
   // All of the joins are completed.
   return notifierResults;
@@ -243,10 +254,10 @@ void joinGlobalPool() {
 
   {
     // Prevent race conditions.
-    scoped_lock lock{globalMutex};
+    scoped_lock lock{*globalMutex};
 
     // Tell all the threads to stop, and set a join notification.
-    for (auto & [threadId, threadInfo] : threads) {
+    for (auto & [threadId, threadInfo] : *threads) {
 
       // Create the promise that will be passed to the correct thread.
       promise<void> notifier;
@@ -255,15 +266,15 @@ void joinGlobalPool() {
       notifierResults.push_back(notifier.get_future());
 
       // Signal for the thread to stop.
-      globalThreadStopQueue.emplace(threadId);
+      globalThreadStopQueue->emplace(threadId);
 
       // Add the promise to the thread's notification list for when it finishes.
-      threads[threadId].second.push_back(move(notifier));
+      (*threads)[threadId].second.push_back(move(notifier));
     }
   }
 
   // Let the globalPool know that there is work to do.
-  globalThreadSemaphore.release();
+  globalThreadSemaphore->release();
 
   // Wait for the joins.
   for (auto & notifier : notifierResults) {
@@ -274,15 +285,15 @@ void joinGlobalPool() {
 
 static bool stopThreads(const set<thread::id> & threadIds) {
   // Prevent race conditions.
-  scoped_lock lock{globalMutex};
+  scoped_lock lock{*globalMutex};
 
   for (auto & threadId : threadIds) {
     // Signal for the thread to stop.
-    globalThreadStopQueue.emplace(threadId);
+    globalThreadStopQueue->emplace(threadId);
   }
 
   // Let the globalPool know that there is work to do.
-  globalThreadSemaphore.release();
+  globalThreadSemaphore->release();
 
   // Return immediately.
   return true;
@@ -291,9 +302,9 @@ static bool stopThreads(const set<thread::id> & threadIds) {
 
 size_t getGlobalPoolThreadCount() {
   // Prevent race conditions.
-  scoped_lock lock{globalMutex};
+  scoped_lock lock{*globalMutex};
 
-  return threads.size();
+  return threads->size();
 }
 
 /**
@@ -352,8 +363,6 @@ struct State {
    * This defaults to the number of logical cores on the system.
    */
   size_t targetThreadCount;
-
-  ~State() {}
 };
 }
 
@@ -564,11 +573,11 @@ static void Ghoti::Pool::threadLoop(stop_token token, shared_ptr<State> state) {
 
   {
     // Record that this thread is terminating.
-    scoped_lock lock{globalMutex};
-    globalThreadJoinQueue.emplace(threadId);
+    scoped_lock lock{*globalMutex};
+    globalThreadJoinQueue->emplace(threadId);
 
     // Let the globalPool know that there is work to do.
-    globalThreadSemaphore.release();
+    globalThreadSemaphore->release();
   }
 }
 
