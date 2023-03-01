@@ -4,8 +4,8 @@
  * include all necessary headers.
  */
 
-#ifndef AQUARIUM_HPP
-#define AQUARIUM_HPP
+#ifndef POOL_HPP
+#define POOL_HPP
 
 #include <functional>
 #include <memory>
@@ -54,9 +54,9 @@ void joinGlobalPool();
 size_t getGlobalPoolThreadCount();
 
 /**
- * Holds information about a job.
+ * Holds information about a task.
  */
-struct Job {
+struct Task {
   std::function<void()> function;
 };
 
@@ -94,12 +94,12 @@ class Pool {
   Ghoti::Pool::Pool& operator=(const Ghoti::Pool::Pool&) = delete;
 
   /**
-   * Enqueue a Job for the thread pool.
+   * Enqueue a Task for the thread pool.
    *
-   * @param job A rvalue representing the Job to be enqueued.
+   * @param task A rvalue representing the Task to be enqueued.
    * @returns True on success, False on failure.
    */
-  bool enqueue(Job && job);
+  bool enqueue(Task && task);
 
   /**
    * Start the thread pool processing.
@@ -109,11 +109,11 @@ class Pool {
   void start();
 
   /**
-   * Stop the thread pool from dispatching new jobs and remove the existing
+   * Stop the thread pool from dispatching new tasks and remove the existing
    * threads.
    *
    * Note: This will not halt any currently processing thread.  It will only
-   * keep that thread from accepting a new Job from the queue.
+   * keep that thread from accepting a new Task from the queue.
    */
   void stop();
 
@@ -123,11 +123,11 @@ class Pool {
   void join();
 
   /**
-   * Returns the number of jobs currently in the job queue.
+   * Returns the number of tasks currently in the task queue.
    *
-   * @returns The number of jobs currently in the job queue.
+   * @returns The number of tasks currently in the task queue.
    */
-  size_t getJobQueueCount();
+  size_t getTaskQueueCount();
 
   /**
    * Set the thread count.
@@ -185,4 +185,4 @@ class Pool {
 };
 
 
-#endif // AQUARIUM_HPP
+#endif // POOL_HPP

@@ -39,7 +39,7 @@ TEST(JoinGlobalPool, AsJoin) {
   EXPECT_NO_THROW(joinGlobalPool());
 
   {
-    // Create a pool of two threads and one job
+    // Create a pool of two threads and one task
     Pool a{2};
     a.enqueue({threadSleep(10ms)});
     a.start();
@@ -150,35 +150,35 @@ TEST(PoolSize, Specified) {
   EXPECT_EQ(a.getRunningThreadCount(), 0);
 }
 
-TEST(JobQueue, Count) {
-  // Create a thread pool with no threads, enqueue jobs that will
+TEST(TaskQueue, Count) {
+  // Create a thread pool with no threads, enqueue tasks that will
   // never be processed.
   Pool a{0};
 
-  // Verify that a job is properly enqueued (even when the pool has not been
+  // Verify that a task is properly enqueued (even when the pool has not been
   // started yet).
   a.enqueue({emptyFunc});
-  EXPECT_EQ(a.getJobQueueCount(), 1);
+  EXPECT_EQ(a.getTaskQueueCount(), 1);
 
-  // Verify that multiple jobs will properly enqueue.
+  // Verify that multiple tasks will properly enqueue.
   a.enqueue({emptyFunc});
-  EXPECT_EQ(a.getJobQueueCount(), 2);
+  EXPECT_EQ(a.getTaskQueueCount(), 2);
 
   // Verify that sleeping does not modify this count.
   this_thread::sleep_for(1ms);
-  EXPECT_EQ(a.getJobQueueCount(), 2);
+  EXPECT_EQ(a.getTaskQueueCount(), 2);
 }
 
 TEST(StopJoin, Compare) {
   // Compare .stop() vs .join().
   Pool a{3};
 
-  // Enqueue 2 jobs.  Start the pool.
+  // Enqueue 2 tasks.  Start the pool.
   a.enqueue({threadSleep(10ms)});
   a.enqueue({threadSleep(10ms)});
   a.start();
 
-  // Sleep to ensure that threads have time to claim the jobs.
+  // Sleep to ensure that threads have time to claim the tasks.
   this_thread::sleep_for(1ms);
 
   // Verify that the counts of the threads and their disposition are correct.

@@ -67,17 +67,17 @@ static void threadLoop(stop_token token, shared_ptr<State> state);
 static void globalPoolLoop();
 
 /**
- * Job queue for threads that need to be created.
+ * Task queue for threads that need to be created.
  */
 static auto globalThreadCreateQueue = make_shared<queue<pair<promise<thread::id>, ThreadFunction>>>();
 
 /**
- * Job queue of thread ids that need to be joined.
+ * Task queue of thread ids that need to be joined.
  */
 static auto globalThreadJoinQueue = make_shared<queue<thread::id>>();
 
 /**
- * Job queue of thread ids that need to be stopped.
+ * Task queue of thread ids that need to be stopped.
  */
 static auto globalThreadStopQueue = make_shared<queue<thread::id>>();
 
@@ -346,9 +346,9 @@ struct State {
   set<thread::id> threadsTerminated;
 
   /**
-   * Queue of jobs waiting to be assigned to a thread.
+   * Queue of tasks waiting to be assigned to a thread.
    */
-  queue<Job> jobs;
+  queue<Task> tasks;
 
   /**
    * Indicates whether or not the threads should terminate.
@@ -356,7 +356,7 @@ struct State {
   bool terminate;
 
   /**
-   * Allows threads to wait on new jobs or termination.
+   * Allows threads to wait on new tasks or termination.
    */
   std::condition_variable mutexCondition;
 
@@ -385,12 +385,12 @@ Pool::~Pool() {
 }
 
 
-bool Pool::enqueue(Job && job) {
+bool Pool::enqueue(Task && task) {
   scoped_lock locks{this->state->queueMutex, this->state->controlMutex};
 
-  this->state->jobs.emplace(move(job));
+  this->state->tasks.emplace(move(task));
 
-  // Notify a thread that a job is available.
+  // Notify a thread that a task is available.
   if (!this->state->terminate) {
     this->state->mutexCondition.notify_one();
   }
@@ -449,9 +449,9 @@ void Pool::join() {
 }
 
 
-size_t Pool::getJobQueueCount() {
+size_t Pool::getTaskQueueCount() {
   scoped_lock queueMutexLock{this->state->queueMutex};
-  return this->state->jobs.size();
+  return this->state->tasks.size();
 }
 
 
@@ -528,24 +528,24 @@ static void Ghoti::Pool::threadLoop(stop_token token, shared_ptr<State> state) {
 
   // The thread loop will continue forever unless the terminate flag is set.
   while (true) {
-    Job job;
+    Task task;
     // Set our waiting state the true.
     {
       scoped_lock controlMutexLock{state->controlMutex};
       state->threadsWaiting[threadId] = true;
     }
 
-    // Try to claim a Job.
+    // Try to claim a Task.
     {
       unique_lock<mutex> queueMutexLock{state->queueMutex};
 
-      // Wake up if there is a job or if the terminate flag is set.
+      // Wake up if there is a task or if the terminate flag is set.
       state->mutexCondition.wait(queueMutexLock, [&] {
         scoped_lock controlMutexLock{state->controlMutex};
         return state->terminate
             || (state->threads.size() > state->targetThreadCount)
             || token.stop_requested()
-            || !state->jobs.empty();
+            || !state->tasks.empty();
       });
 
       {
@@ -565,13 +565,13 @@ static void Ghoti::Pool::threadLoop(stop_token token, shared_ptr<State> state) {
         state->threadsWaiting[threadId] = false;
       }
 
-      // Claim a job.
-      job = move(state->jobs.front());
-      state->jobs.pop();
+      // Claim a task.
+      task = move(state->tasks.front());
+      state->tasks.pop();
     }
 
-    // Execute the job.
-    job.function();
+    // Execute the task.
+    task.function();
   }
 
   {
