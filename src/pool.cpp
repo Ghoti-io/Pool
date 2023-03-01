@@ -95,6 +95,9 @@ static auto globalPoolNotStarted = make_shared<binary_semaphore>(1);
 
 
 static void globalPoolLoop() {
+  // Create copies of the control structures.  This will protect them from
+  // being automatically destroyed in the event that this thread is still
+  // running when the main thread ends.
   auto globalThreadSemaphore = Ghoti::Pool::globalThreadSemaphore;
   auto globalMutex = Ghoti::Pool::globalMutex;
   auto globalThreadCreateQueue = Ghoti::Pool::globalThreadCreateQueue;
