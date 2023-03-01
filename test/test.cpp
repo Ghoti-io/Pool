@@ -45,7 +45,7 @@ TEST(JoinGlobalPool, AsJoin) {
     a.start();
 
     // Wait to ensure that the thread pool has time to start the thread.
-    this_thread::sleep_for(1ms);
+    this_thread::yield();
   }
 
   // Verify that there is one thread running, even though the Pool has been
