@@ -5,7 +5,7 @@ BUILD := ./build
 OBJ_DIR := $(BUILD)/objects
 GEN_DIR := $(BUILD)/generated
 APP_DIR := $(BUILD)/apps
-TARGET := libghoti-io-pool.so
+TARGET := libghoti.io-pool.so
 INCLUDE := -I include/
 LIBOBJECTS := $(OBJ_DIR)/pool.o
 
@@ -62,7 +62,7 @@ $(APP_DIR)/test: \
 # Commands
 ####################################################################
 
-.PHONY: all clean cloc docs docs-pdf test test-watch watch
+.PHONY: all clean cloc docs docs-pdf install test test-watch watch
 
 watch: ## Watch the file directory for changes and compile the target
 	@while true; do \
@@ -95,6 +95,20 @@ test: \
 	@echo "############################"
 	@echo "\033[0m"
 	$(APP_DIR)/test --gtest_brief=1
+
+install: ## Install the library
+	@cp pkgconfig/ghoti.io-pool.pc /usr/lib/x86_64-linux-gnu/pkgconfig/
+	@cp $(APP_DIR)/$(TARGET) /usr/lib/x86_64-linux-gnu/$(TARGET)
+	@mkdir -p /usr/include/ghoti.io/
+	@cp include/pool.hpp /usr/include/ghoti.io/
+	@echo "Ghoti.io Pool installed"
+
+uninstall: ## Remove previously-installed libraries and header files
+	@-rm /usr/lib/x86_64-linux-gnu/pkgconfig/ghoti.io-pool.pc
+	@-rm /usr/lib/x86_64-linux-gnu/$(TARGET)
+	@-rm /usr/include/ghoti.io/pool.hpp
+	@-rmdir /usr/include/ghoti.io
+	@echo "Ghoti.io Pool uninstalled"
 
 clean: ## Remove all contents of the build directories.
 	-@rm -rvf $(OBJ_DIR)/*

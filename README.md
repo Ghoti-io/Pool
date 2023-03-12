@@ -12,7 +12,7 @@ This is what I plan for the code behavior to be.  The `#include` might be
 different, depending on how you compile this project.
 
 ```C++
-#include <Ghoti.io/pool.hpp>
+#include <ghoti.io/pool.hpp>
 
 // For the thread sleep...
 #include <thread>
