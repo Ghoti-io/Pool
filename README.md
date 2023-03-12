@@ -190,6 +190,17 @@ This project will manage the worker pools and task queues for you so that you
 can focus on the parts of your project that you enjoy.  It's a utility, pure
 and simple.
 
+## Why not just use Boost?
+  1. Because **I** wanted to write this myself.  The journey is as important as
+     the result!
+  1. Boost is a great project, and I appreciate what it did for C++ in
+     providing otherwise-missing functionality.  At the same time, it has been
+     the source of major frustration for me more than once in the past.
+     Honestly, I want to avoid it as much as possible.
+  1. The interface of this library is simpler and behaves differently than
+     Boost's library.  Most importantly, the Boost version has a blocking
+     destructor, while this library is non-blocking unless explicitly invoked.
+
 ## Design
 This library operates in the following way:
   1. It uses a **managing thread** to create and join all **worker threads**.
