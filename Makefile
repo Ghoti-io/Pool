@@ -5,14 +5,18 @@ BUILD := ./build
 OBJ_DIR := $(BUILD)/objects
 GEN_DIR := $(BUILD)/generated
 APP_DIR := $(BUILD)/apps
-TARGET := libghoti.io-pool.so
+BASE_NAME := libghoti.io-pool.so
+MAJOR_VERSION := 0
+MINOR_VERSION := 0.0
+SO_NAME := $(BASE_NAME).$(MAJOR_VERSION)
+TARGET := $(SO_NAME).$(MINOR_VERSION)
 INCLUDE := -I include/
 LIBOBJECTS := $(OBJ_DIR)/pool.o
 
 TESTFLAGS := `pkg-config --libs --cflags gtest`
 
 
-POOLLIBRARY := -L $(APP_DIR) -Wl,-R -Wl,$(APP_DIR) -l:$(TARGET)
+POOLLIBRARY := -L $(APP_DIR) -lghoti.io-pool
 
 
 all: $(APP_DIR)/$(TARGET) ## Build the shared library
@@ -44,7 +48,9 @@ $(APP_DIR)/$(TARGET): \
 				$(LIBOBJECTS)
 	@echo "\n### Compiling Ghoti.io Pool Shared Library ###"
 	@mkdir -p $(@D)
-	$(CXX) $(CXXFLAGS) -shared -o $@ $^ $(LDFLAGS)
+	$(CXX) $(CXXFLAGS) -shared -o $@ $^ $(LDFLAGS) -Wl,-soname,$(SO_NAME)
+	@ln -f -s $(TARGET) $(APP_DIR)/$(SO_NAME)
+	@ln -f -s $(SO_NAME) $(APP_DIR)/$(BASE_NAME)
 
 ####################################################################
 # Unit Tests
@@ -94,21 +100,24 @@ test: \
 	@echo "### Running normal tests ###"
 	@echo "############################"
 	@echo "\033[0m"
-	$(APP_DIR)/test --gtest_brief=1
+	env LD_LIBRARY_PATH="$(APP_DIR)" $(APP_DIR)/test --gtest_brief=1
 
 install: ## Install the library
-	@cp pkgconfig/ghoti.io-pool.pc /usr/lib/x86_64-linux-gnu/pkgconfig/
-	@cp $(APP_DIR)/$(TARGET) /usr/lib/x86_64-linux-gnu/$(TARGET)
-	@mkdir -p /usr/include/ghoti.io/
-	@cp include/pool.hpp /usr/include/ghoti.io/
+	# Install the Shared Library
+	@mkdir -p /usr/local/lib/ghoti.io
+	@cp $(APP_DIR)/$(TARGET) /usr/local/lib/ghoti.io/
+	@ln -f -s $(TARGET) /usr/local/lib/ghoti.io/$(SO_NAME)
+	@ln -f -s $(SO_NAME) /usr/local/lib/ghoti.io/$(BASE_NAME)
+	@echo "/usr/local/lib/ghoti.io" > /etc/ld.so.conf.d/ghoti.io-pool.conf
+	# Install the headers
+	@mkdir -p /usr/local/include/ghoti.io/
+	@cp include/pool.hpp /usr/local/include/ghoti.io/
+	# Install the pkgconfig files
+	@mkdir -p /usr/local/share/pkgconfig
+	@cp pkgconfig/ghoti.io-pool.pc /usr/local/share/pkgconfig/
+	# Run ldconfig
+	@ldconfig >> /dev/null 2>&1
 	@echo "Ghoti.io Pool installed"
-
-uninstall: ## Remove previously-installed libraries and header files
-	@-rm /usr/lib/x86_64-linux-gnu/pkgconfig/ghoti.io-pool.pc
-	@-rm /usr/lib/x86_64-linux-gnu/$(TARGET)
-	@-rm /usr/include/ghoti.io/pool.hpp
-	@-rmdir /usr/include/ghoti.io
-	@echo "Ghoti.io Pool uninstalled"
 
 clean: ## Remove all contents of the build directories.
 	-@rm -rvf $(OBJ_DIR)/*
