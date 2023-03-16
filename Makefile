@@ -5,11 +5,13 @@ BUILD := ./build
 OBJ_DIR := $(BUILD)/objects
 GEN_DIR := $(BUILD)/generated
 APP_DIR := $(BUILD)/apps
+
 BASE_NAME := libghoti.io-pool.so
 MAJOR_VERSION := 0
 MINOR_VERSION := 0.0
 SO_NAME := $(BASE_NAME).$(MAJOR_VERSION)
 TARGET := $(SO_NAME).$(MINOR_VERSION)
+
 INCLUDE := -I include/
 LIBOBJECTS := $(OBJ_DIR)/pool.o
 
