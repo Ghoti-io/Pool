@@ -129,8 +129,9 @@ clean: ## Remove all contents of the build directories.
 docs: ## Generate the documentation in the ./docs subdirectory
 	doxygen
 
-docs-pdf: docs ## Generate the documentation as a pdf, in ./docs/latex/refman.pdf
+docs-pdf: docs ## Generate the documentation as a pdf, in ./docs/pool.pdf
 	cd ./docs/latex/ && make
+	mv -f ./docs/latex/refman.pdf ./docs/pool-docs.pdf
 
 cloc: ## Count the lines of code used in the project
 	cloc src include test Makefile
