@@ -129,7 +129,7 @@ clean: ## Remove all contents of the build directories.
 docs: ## Generate the documentation in the ./docs subdirectory
 	doxygen
 
-docs-pdf: docs ## Generate the documentation as a pdf, in ./docs/pool.pdf
+docs-pdf: docs ## Generate the documentation as a pdf, in ./docs/pool-docs.pdf
 	cd ./docs/latex/ && make
 	mv -f ./docs/latex/refman.pdf ./docs/pool-docs.pdf
 
